@@ -49,8 +49,8 @@
       (if (>= retry retry-count)
         false
         (let [start-time (System/currentTimeMillis)
-              locks (do-cluster cluster-specs lock-instance! resource value ttl)
-              n (count (filter true? locks))
+              locked (do-cluster cluster-specs lock-instance! resource value ttl)
+              n (count (filter identity locked))
               drift (-> ttl (* clock-drift-factor) (+ 2)) ;; TODO: check units 
               delta (- (System/currentTimeMillis) start-time)
               validity-time (-> ttl (- delta) (- drift))]
