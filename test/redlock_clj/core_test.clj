@@ -3,6 +3,10 @@
             [redlock-clj.core :refer :all]))
 
 (defn file-based-counter [{:keys [cluster file-name times-per-thread n-threads]}] 
+  (println "Create cluster with at least two of:")
+  (println "> redis-server --port 6379")
+  (println "> redis-server --port 6380")
+  (println "> redis-server --port 6381")
   (spit file-name (str 0)) 
   (doall 
     (pmap 
@@ -30,7 +34,7 @@
               {:cluster [{:spec {:port 6379}}
                          {:spec {:port 6380}}
                          {:spec {:port 6381}}]
-               :file-name "/tmp/counter5.txt"
+               :file-name "/tmp/counter.txt"
                :times-per-thread 100
                :n-threads 5})
             500))))

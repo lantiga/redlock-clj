@@ -10,7 +10,7 @@
 
 (defn- quorum 
   [n-tot]
-  (-> n-tot (/ 2) (+ 1)))
+  (-> n-tot (quot 2) (+ 1)))
 
 (defn- lock-instance! 
   [server resource value ttl]
@@ -44,17 +44,17 @@
               :or {retry-count 3
                    retry-delay 200
                    clock-drift-factor 0.01}}]
-  (let [value (unique-lock-id)]
+  (let [value (unique-lock-id)
+        n-quorum (quorum (count cluster))]
     (loop [retry 0] 
-      (if (>= retry retry-count)
-        false
+      (when (< retry retry-count)
         (let [start-time (System/currentTimeMillis)
               locked (do-cluster cluster lock-instance! resource value ttl)
               n (count (filter identity locked))
               drift (-> ttl (* clock-drift-factor) (+ 2))
               delta (- (System/currentTimeMillis) start-time)
               validity-time (-> ttl (- delta) (- drift))]
-          (if (and (>= n (quorum (count cluster))) (pos? validity-time)) 
+          (if (and (>= n n-quorum) (pos? validity-time)) 
             {:validity validity-time
              :resource resource
              :value value}
