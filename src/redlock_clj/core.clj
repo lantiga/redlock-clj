@@ -9,68 +9,73 @@
    end") 
 
 (defn- quorum 
-  [cluster-specs]
-  (-> (count cluster-specs) (/ 2) (+ 1)))
+  [n-tot]
+  (-> n-tot (/ 2) (+ 1)))
 
 (defn- lock-instance! 
-  [server-specs resource value ttl]
+  [server resource value ttl]
   (try
-    (car/wcar server-specs
+    (car/wcar server
       (car/set resource value :nx :px ttl))
     (catch Exception e false)))
 
 (defn- unlock-instance! 
-  [server-specs resource value]
+  [server resource value]
   (try
-    (car/wcar server-specs
+    (car/wcar server
       (car/eval unlock-script 1 resource value))
     (catch Exception e false)))
 
 (defn- do-cluster
-  [cluster-specs f & args]
+  [cluster f & args]
   (doall 
     (pmap 
-      (fn [[_ server-specs]] 
-        (apply (partial f server-specs) args)) 
-      cluster-specs)))
+      (fn [server] 
+        (apply (partial f server) args)) 
+      cluster)))
 
 (defn- unique-lock-id []
   (str (java.util.UUID/randomUUID)))
 
-(defn lock! [cluster-specs resource ttl & 
+(defn lock! [cluster resource ttl & 
              {:keys [retry-count 
                      retry-delay 
                      clock-drift-factor] 
-              :or {:retry-count 3
-                   :retry-delay 200
-                   :clock-drift-factor 0.01}}]
+              :or {retry-count 3
+                   retry-delay 200
+                   clock-drift-factor 0.01}}]
   (let [value (unique-lock-id)]
     (loop [retry 0] 
       (if (>= retry retry-count)
         false
         (let [start-time (System/currentTimeMillis)
-              locked (do-cluster cluster-specs lock-instance! resource value ttl)
+              locked (do-cluster cluster lock-instance! resource value ttl)
               n (count (filter identity locked))
-              drift (-> ttl (* clock-drift-factor) (+ 2)) ;; TODO: check units 
+              drift (-> ttl (* clock-drift-factor) (+ 2))
               delta (- (System/currentTimeMillis) start-time)
               validity-time (-> ttl (- delta) (- drift))]
-          (if (and (>= n (quorum cluster-specs)) (pos? validity-time)) 
+          (if (and (>= n (quorum (count cluster))) (pos? validity-time)) 
             {:validity validity-time
              :resource resource
              :value value}
             (do
-              (do-cluster cluster-specs unlock-instance! resource value)
+              (do-cluster cluster unlock-instance! resource value)
               (Thread/sleep (rand retry-delay))
               (recur (inc retry)))))))))
 
-(defn unlock! [cluster-specs lock]
-  (do-cluster cluster-specs unlock-instance! (:resource lock) (:value lock)))
+(defn unlock! [cluster lock]
+  (do-cluster cluster unlock-instance! (:resource lock) (:value lock)))
 
 (comment
-   
-  (def cluster-specs
-    {:server1 {:spec {:port 7777}} 
-     :server2 {:spec {:port 7778}}
-     :server3 {:spec {:port 7779}}})
+  
+ (let [cluster {:spec {:port 6379}}
+               {:spec {:port 6380}}
+               {:spec {:port 6381}}]
+   (repeatedly 10
+     #(if-let [foo-lock (lock! cluster "foo" 1000)]
+        (do 
+          (prn "Lock acquired" foo-lock)
+          (unlock! cluster foo-lock))
+        (prn "Error, lock not acquired")))) 
 
   ) 
